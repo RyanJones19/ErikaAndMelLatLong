@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import streamlit as st
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
-from geopy.geocoders import Nominatim
+from geopy.geocoders import OpenCage
 
 st.set_page_config(page_title="CSV Geocoder", page_icon="📍")
 st.title("📍 CSV Geocoder")
@@ -24,12 +24,12 @@ def build_query(row: pd.Series, cols: list[str]) -> str:
 
 
 @st.cache_resource
-def get_geocoder(email: str):
-    return Nominatim(user_agent=f"streamlit-csv-geocoder/1.0 ({email or 'anonymous'})")
+def get_geocoder(api_key: str):
+    return OpenCage(api_key=api_key)
 
 
 def geocode_with_backoff(geocoder, query: str, max_attempts: int = 4) -> object | None:
-    """Call Nominatim with exponential backoff on transient errors (timeout, 429, 5xx)."""
+    """Call the geocoder with exponential backoff on transient errors (timeout, 429, 5xx)."""
     delay = 2.0
     for attempt in range(1, max_attempts + 1):
         try:
@@ -66,10 +66,17 @@ if uploaded:
         default=[c for c in ["street", "city", "state", "zip"] if c in df.columns],
     )
 
-    email = st.text_input("Your email", placeholder="you@example.com")
+    try:
+        api_key = st.secrets["OPENCAGE_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        st.error(
+            "Missing OPENCAGE_API_KEY. Add it to `.streamlit/secrets.toml` locally "
+            "or to the Secrets section in the Streamlit Cloud app settings."
+        )
+        st.stop()
 
-    if st.button("Geocode", type="primary", disabled=not (address_cols and email)):
-        geocoder = get_geocoder(email)
+    if st.button("Geocode", type="primary", disabled=not address_cols):
+        geocoder = get_geocoder(api_key)
         progress = st.progress(0.0, text="Starting...")
         results = []
         failed_names = []

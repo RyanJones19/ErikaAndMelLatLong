@@ -1,4 +1,4 @@
-"""Streamlit app: upload a CSV of addresses, get back a CSV with lat/lon columns."""
+"""Streamlit app: upload a CSV or Excel file of addresses, get back the same file with lat/lon columns."""
 
 import io
 import re
@@ -9,9 +9,9 @@ import streamlit as st
 from geopy.exc import GeocoderServiceError, GeocoderTimedOut
 from geopy.geocoders import OpenCage
 
-st.set_page_config(page_title="CSV Geocoder", page_icon="📍")
-st.title("📍 CSV Geocoder")
-st.caption("Upload a CSV with address columns. Returns the same CSV with `lat` and `lon` added.")
+st.set_page_config(page_title="CSV / Excel Geocoder", page_icon="📍")
+st.title("📍 CSV / Excel Geocoder")
+st.caption("Upload a CSV or Excel file with address columns. Returns the same data with `lat` and `lon` added.")
 
 
 def strip_suite(street: str) -> str:
@@ -51,10 +51,13 @@ def geocode_one(geocoder, query: str, retry_query: str | None) -> tuple[float | 
     return None, None, ""
 
 
-uploaded = st.file_uploader("Upload CSV", type=["csv"])
+uploaded = st.file_uploader("Upload CSV or Excel", type=["csv", "xlsx", "xls"])
 
 if uploaded:
-    df = pd.read_csv(uploaded)
+    if uploaded.name.lower().endswith((".xlsx", ".xls")):
+        df = pd.read_excel(uploaded)
+    else:
+        df = pd.read_csv(uploaded)
     st.write(f"**{len(df)} rows loaded.** Preview:")
     st.dataframe(df.head(), use_container_width=True)
 
@@ -116,11 +119,22 @@ if uploaded:
             mappable = out.dropna(subset=["lat", "lon"]).rename(columns={"lon": "longitude", "lat": "latitude"})
             st.map(mappable[["latitude", "longitude"]])
 
-        buf = io.StringIO()
-        out.to_csv(buf, index=False)
-        st.download_button(
-            "⬇️ Download geocoded CSV",
-            data=buf.getvalue(),
+        csv_buf = io.StringIO()
+        out.to_csv(csv_buf, index=False)
+        xlsx_buf = io.BytesIO()
+        with pd.ExcelWriter(xlsx_buf, engine="openpyxl") as writer:
+            out.to_excel(writer, index=False, sheet_name="geocoded")
+
+        col1, col2 = st.columns(2)
+        col1.download_button(
+            "⬇️ Download CSV",
+            data=csv_buf.getvalue(),
             file_name="addresses_geocoded.csv",
             mime="text/csv",
+        )
+        col2.download_button(
+            "⬇️ Download Excel",
+            data=xlsx_buf.getvalue(),
+            file_name="addresses_geocoded.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
